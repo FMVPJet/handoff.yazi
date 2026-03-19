@@ -1,3 +1,5 @@
+English | [简体中文](./README.zh-CN.md)
+
 # handoff.yazi
 
 A macOS-focused file handoff toolkit for [Yazi](https://github.com/sxyazi/yazi).
