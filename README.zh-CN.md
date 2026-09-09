@@ -10,6 +10,7 @@
 
 - 将选中项作为原生 macOS 文件对象复制
 - 压缩选中项并复制生成的 zip 文件
+- 把 zip 压缩包解压到它所在的目录
 - 分享文件到 macOS 应用，包括 AirDrop
 - 通过交互式远端选择器使用 `rsync` 上传
 - 在 Finder、VS Code 或 Cursor 中打开当前目录
@@ -21,6 +22,8 @@
   - 将选中项复制为文件对象，可以直接粘贴到 Finder 和兼容应用中
 - `Archive`
   - 为选中项创建 zip 压缩包，并将压缩包作为文件对象复制
+- `Extract`
+  - 把选中的 zip 压缩包解压到它所在的目录
 - `Share`
   - 将选中项分享到 AirDrop、微信、飞书、Slack 等应用
 - `Remote Sync`
@@ -70,6 +73,11 @@ run  = "plugin handoff -- smart_zip"
 desc = "Archive"
 
 [[mgr.prepend_keymap]]
+on   = [ "\\", "x" ]
+run  = "plugin handoff -- extract_here"
+desc = "Extract"
+
+[[mgr.prepend_keymap]]
 on   = [ "\\", "s" ]
 run  = "plugin handoff -- share_menu"
 desc = "Share"
@@ -107,6 +115,7 @@ desc = "Open With..."
 3. 选择一个交接动作：
    - `c` 复制
    - `z` 压缩
+   - `x` 解压
    - `s` 分享
    - `r` 远程同步
    - `of` / `ov` / `oc` / `oo` 用应用打开
@@ -147,6 +156,7 @@ return {
 | --- | --- | --- |
 | `c` | Copy | 将选中项复制为文件对象 |
 | `z` | Archive | 创建压缩包并复制 |
+| `x` | Extract | 把选中的 `.zip` 解压到同级目录 |
 | `s` | Share | 把选中项分享到应用 |
 | `r` | Remote Sync | 上传选中项到远程主机 |
 | `of` | Open in Finder | 在 Finder 中打开当前目录 |
