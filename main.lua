@@ -1,22 +1,38 @@
 -- ~/.config/yazi/plugins/handoff.yazi/main.lua
 
 -- 1. Load external config (optional)
-local config = { share_apps = { w = "WeChat", f = "Feishu" } }
+local default_config = {
+	share_apps = { w = "WeChat", f = "Feishu" },
+	cache_dir = "/tmp/handoff-swift-cache",
+	archive_dir = "/tmp/handoff-archive",
+	archive_cleanup_minutes = 1440,
+	airdrop_timeout_seconds = 300,
+}
+local config = default_config
 local ok, custom_config = pcall(require, "handoff.config")
-if not ok then
-	ok, custom_config = pcall(require, "smart-action.config")
+if ok and custom_config then
+	-- Merge custom config with defaults
+	for k, v in pairs(custom_config) do
+		config[k] = v
+	end
 end
-if ok then config = custom_config end
 
 local TITLE = "Handoff"
 local AIRDROP_LABEL = "AirDrop"
-local SWIFT_CACHE_DIR = "/tmp/handoff-swift-cache"
+
+-- Initialize from config
+local SWIFT_CACHE_DIR = config.cache_dir
+local ZIP_TEMP_DIR = config.archive_dir
+local ARCHIVE_CLEANUP_MINUTES = config.archive_cleanup_minutes
+local AIRDROP_TIMEOUT_SECONDS = config.airdrop_timeout_seconds
+
 local SWIFT_ENV_PREFIX = table.concat({
 	"SWIFT_MODULE_CACHE_PATH=/tmp/swift-module-cache",
 	"CLANG_MODULE_CACHE_PATH=/tmp/clang-module-cache",
 }, " ")
 
 local function shell_escape(value)
+	-- Escape single quotes for shell: replace ' with '"'"'
 	return "'" .. tostring(value):gsub("'", "'\"'\"'") .. "'"
 end
 
@@ -62,6 +78,14 @@ local function run_command_or_notify(cmd, failure_content, title)
 	return false
 end
 
+local function trim_output(output, max_len)
+	output = tostring(output or ""):gsub("%s+$", "")
+	if output == "" then return output end
+	max_len = max_len or 240
+	if #output <= max_len then return output end
+	return output:sub(1, max_len - 1) .. "…"
+end
+
 local function write_temp_file(prefix, suffix, content)
 	local path = string.format("/tmp/%s-%d-%06d%s", prefix, os.time(), math.random(0, 999999), suffix or "")
 	local file = io.open(path, "w")
@@ -79,6 +103,18 @@ local function file_exists(path)
 end
 
 local function hash_source(source)
+	-- Try to use shasum for better hash quality
+	local handle = io.popen("printf '%s' " .. shell_escape(source) .. " | shasum -a 256 2>/dev/null")
+	if handle then
+		local output = handle:read("*a")
+		handle:close()
+		local hash = output and output:match("^(%w+)")
+		if hash and #hash >= 16 then
+			return hash:sub(1, 16) .. "-" .. #source
+		end
+	end
+
+	-- Fallback to djb2 hash
 	local hash = 5381
 	for i = 1, #source do
 		hash = (hash * 33 + source:byte(i)) % 4294967296
@@ -146,12 +182,20 @@ local function run_swift_script(source, args)
 	for _, arg in ipairs(args or {}) do
 		cmd = cmd .. " " .. shell_escape(arg)
 	end
-	cmd = cmd .. " > /dev/null 2>&1"
 
-	local ok_exec = run_command(cmd)
+	-- run_command_capture already redirects stderr into stdout
+	local ok_exec, output = run_command_capture(cmd)
 	if script_path then
 		os.remove(script_path)
 	end
+
+	if not ok_exec and output and output ~= "" then
+		local trimmed = trim_output(output, 200)
+		if trimmed ~= "" then
+			notify_error("Swift execution failed:\n" .. trimmed, TITLE, 5)
+		end
+	end
+
 	return ok_exec
 end
 
@@ -222,7 +266,7 @@ local function copy_file_objects(urls, failure_context)
 end
 
 local function share_via_airdrop_swift(file_list)
-	return run_swift_script([[
+	local swift_source = string.format([[
 		import AppKit
 		import Foundation
 
@@ -268,13 +312,23 @@ local function share_via_airdrop_swift(file_list)
 		let delegate = AirDropDelegate(app: app)
 		service.delegate = delegate
 
-		Timer.scheduledTimer(withTimeInterval: 300, repeats: false) { _ in
+		Timer.scheduledTimer(withTimeInterval: %d, repeats: false) { _ in
 			app.stop(nil)
 		}
 
 		service.perform(withItems: items)
 		app.run()
-	]], file_list)
+	]], AIRDROP_TIMEOUT_SECONDS)
+	return run_swift_script(swift_source, file_list)
+end
+
+local function open_airdrop_finder(urls)
+	for _, u in ipairs(urls) do
+		if not run_command("open -a " .. shell_escape(AIRDROP_LABEL) .. " " .. shell_escape(u)) then
+			return false
+		end
+	end
+	return true
 end
 
 local function share_via_airdrop(urls)
@@ -291,25 +345,6 @@ local function share_via_airdrop(urls)
 	return true
 end
 
-local function open_airdrop_finder(urls)
-	for _, u in ipairs(urls) do
-		if not run_command("open -a " .. shell_escape(AIRDROP_LABEL) .. " " .. shell_escape(u)) then
-			return false
-		end
-	end
-	return true
-end
-
-local ZIP_TEMP_DIR = "/tmp/handoff-archive"
-
-local function trim_output(output, max_len)
-	output = tostring(output or ""):gsub("%s+$", "")
-	if output == "" then return output end
-	max_len = max_len or 240
-	if #output <= max_len then return output end
-	return output:sub(1, max_len - 1) .. "…"
-end
-
 local function ensure_zip_temp_dir()
 	if run_command("mkdir -p " .. shell_escape(ZIP_TEMP_DIR)) then return true end
 	notify_error("Couldn't create the temporary archive folder.", TITLE, 6)
@@ -317,10 +352,27 @@ local function ensure_zip_temp_dir()
 end
 
 local function cleanup_old_zip_artifacts()
+	-- Run cleanup in background to avoid blocking
 	run_command(
 		"find " .. shell_escape(ZIP_TEMP_DIR)
 			.. " -type f -name '*_[0-1][0-9][0-3][0-9]_[0-2][0-9][0-5][0-9].zip'"
-			.. " -mmin +1440 -delete > /dev/null 2>&1"
+			.. " -mmin +" .. tostring(ARCHIVE_CLEANUP_MINUTES) .. " -delete > /dev/null 2>&1 &"
+	)
+end
+
+-- Drop compiled Swift binaries that haven't been used in a week.
+-- Guarded by a stamp file so this runs at most once a day, regardless of
+-- how many actions are invoked in between.
+local function cleanup_old_swift_cache()
+	local stamp = SWIFT_CACHE_DIR .. "/.last-sweep"
+	if file_exists(stamp) and run_command("find " .. shell_escape(stamp) .. " -mmin -1440 | grep -q . 2>/dev/null") then
+		return
+	end
+	run_command(
+		"mkdir -p " .. shell_escape(SWIFT_CACHE_DIR)
+			.. " && touch " .. shell_escape(stamp)
+			.. " && find " .. shell_escape(SWIFT_CACHE_DIR)
+			.. " -type f ! -name '.last-sweep' -atime +7 -delete > /dev/null 2>&1 &"
 	)
 end
 
@@ -346,8 +398,10 @@ local function create_zip_file(urls)
 	if #urls == 0 then return false end
 	if not ensure_zip_temp_dir() then return false end
 
+	notify("info", "Creating archive...", TITLE, 1)
+
 	local zip_name = build_zip_name(urls)
-	
+
 	local ok_zip, zip_output, zip_code = false, "", nil
 	if #urls == 1 then
 		if is_directory(urls[1]) then
@@ -376,6 +430,7 @@ local function create_zip_file(urls)
 		return nil
 	end
 
+	notify("info", "Archive created successfully", TITLE, 2)
 	return zip_name
 end
 
@@ -408,9 +463,44 @@ local function perform_zip_action(urls)
 	return true
 end
 
+local function perform_extract_action(urls)
+	if #urls ~= 1 then
+		notify_warn("Select exactly one archive to extract.", TITLE)
+		return false
+	end
+
+	local archive = urls[1]
+	if not archive:match("%.zip$") then
+		notify_warn("Only .zip files are supported for extraction.", TITLE)
+		return false
+	end
+
+	local dest = archive:match("^(.*)/[^/]+$") or "."
+	notify("info", "Extracting archive...", TITLE, 1)
+
+	local extract_cmd = "unzip -q " .. shell_escape(archive) .. " -d " .. shell_escape(dest) .. " 2>&1"
+	local ok_extract, output, code = run_command_capture(extract_cmd)
+
+	if not ok_extract then
+		local detail = trim_output(output, 200)
+		if detail ~= "" then
+			notify_error("Couldn't extract the archive:\n" .. detail, TITLE, 5)
+		else
+			notify_error("Couldn't extract the archive (exit code: " .. tostring(code or "?") .. ").", TITLE, 5)
+		end
+		return false
+	end
+
+	notify("info", "Archive extracted successfully", TITLE, 2)
+	return true
+end
+
 return {
 	entry = function(self, job)
 		local action = job.args[1]
+
+		-- Sweep stale Swift binaries at most once a day (non-blocking)
+		cleanup_old_swift_cache()
 
 		-- Directory-level actions
 		if action == "open_vscode" then
@@ -440,6 +530,8 @@ return {
 			if action == "smart_zip" then
 				cleanup_old_zip_artifacts()
 				perform_zip_action(urls)
+			elseif action == "extract_here" then
+				perform_extract_action(urls)
 			elseif action == "share_menu" then
 				local cands = {}
 				for k, v in pairs(config.share_apps) do table.insert(cands, { on = k, desc = v }) end

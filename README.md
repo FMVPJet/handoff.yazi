@@ -21,6 +21,8 @@ A macOS-focused file handoff toolkit for [Yazi](https://github.com/sxyazi/yazi).
   - Copies selected items as file objects, so they can be pasted into Finder and compatible apps
 - `Archive`
   - Creates a zip archive from selected items and copies the archive as a file object
+- `Extract`
+  - Extracts a zip archive to the current directory
 - `Share`
   - Shares selected items to apps such as AirDrop, WeChat, Feishu, Slack, and others
 - `Remote Sync`
@@ -70,6 +72,11 @@ run  = "plugin handoff -- smart_zip"
 desc = "Archive"
 
 [[mgr.prepend_keymap]]
+on   = [ "\\", "x" ]
+run  = "plugin handoff -- extract_here"
+desc = "Extract"
+
+[[mgr.prepend_keymap]]
 on   = [ "\\", "s" ]
 run  = "plugin handoff -- share_menu"
 desc = "Share"
@@ -107,6 +114,7 @@ desc = "Open With..."
 3. Choose one of the handoff actions:
    - `c` to copy
    - `z` to archive
+   - `x` to extract
    - `s` to share
    - `r` to sync remotely
    - `of` / `ov` / `oc` / `oo` to open with apps
@@ -147,6 +155,7 @@ Press `\` in Yazi, then use one of the following actions:
 | --- | --- | --- |
 | `c` | Copy | Copy the selected items as file objects |
 | `z` | Archive | Create an archive and copy it |
+| `x` | Extract | Extract a selected `.zip` next to itself |
 | `s` | Share | Share the selected items to an app |
 | `r` | Remote Sync | Upload the selected items to a remote host |
 | `of` | Open in Finder | Open the current directory in Finder |
