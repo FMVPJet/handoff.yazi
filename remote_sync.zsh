@@ -124,6 +124,14 @@ if [[ -r "$STATE_FILE" ]]; then
 	IFS=$'\t' read -r recent_host recent_path < "$STATE_FILE" || true
 elif [[ -r "$LEGACY_STATE_FILE" ]]; then
 	IFS=$'\t' read -r recent_host recent_path < "$LEGACY_STATE_FILE" || true
+	# Migrate legacy state to new location
+	if [[ -n "$recent_host" ]] && mkdir -p -- "$STATE_DIR" 2>>"$DEBUG_LOG"; then
+		if print -r -- "${recent_host}"$'\t'"${recent_path}" >| "$STATE_FILE" 2>>"$DEBUG_LOG"; then
+			debug_log "legacy_state_migrated=1"
+		else
+			debug_log "legacy_state_migration_failed=1"
+		fi
+	fi
 fi
 debug_log "state_file=$STATE_FILE"
 debug_log "recent_host=${recent_host:-<empty>}"
@@ -147,27 +155,69 @@ if (( ${#source_paths[@]} == 0 )); then
 	exit 2
 fi
 
+# Expand `Include` directives so hosts defined in included files are offered
+# too. Paths may be relative (resolved against ~/.ssh), may use ~, and may
+# contain globs. Depth-limited to avoid cycles.
+collect_config_files() {
+	local config_path="$1"
+	local depth="${2:-0}"
+
+	(( depth > 8 )) && return 0
+	[[ -r "$config_path" ]] || return 0
+
+	print -r -- "$config_path"
+
+	local line trimmed rest token expanded
+	local ssh_dir="${config_path:h}"
+	while IFS= read -r line || [[ -n "$line" ]]; do
+		trimmed="${line##[[:space:]]#}"
+		[[ "$trimmed" == [Ii][Nn][Cc][Ll][Uu][Dd][Ee][[:space:]]* ]] || continue
+		rest="${trimmed#[Ii][Nn][Cc][Ll][Uu][Dd][Ee][[:space:]]#}"
+
+		for token in ${(z)rest}; do
+			token="${token//[\"\']/}"
+			[[ -n "$token" ]] || continue
+			# The `~/` pattern must stay quoted: unquoted, zsh tilde-expands the
+			# pattern itself and the prefix is never stripped.
+			case "$token" in
+				"~/"*) expanded="${HOME_DIR}/${token#"~/"}" ;;
+				/*)    expanded="$token" ;;
+				*)     expanded="${ssh_dir}/${token}" ;;
+			esac
+			# Globs expand to nothing when unmatched rather than erroring.
+			local matched
+			for matched in ${~expanded}(N); do
+				collect_config_files "$matched" $(( depth + 1 ))
+			done
+		done
+	done < "$config_path"
+}
+
 parse_hosts() {
 	[[ -r "$SSH_CONFIG_PATH" ]] || return 1
 	typeset -A seen_hosts
-	local line trimmed rest token
+	local line trimmed rest token config_file
 
-	while IFS= read -r line || [[ -n "$line" ]]; do
-		trimmed="${line##[[:space:]]#}"
-		if [[ ! "$trimmed" == [Hh][Oo][Ss][Tt][[:space:]]* ]]; then
-			continue
-		fi
-
-		rest="${trimmed#[Hh][Oo][Ss][Tt][[:space:]]#}"
-		for token in ${(z)rest}; do
-			[[ "$token" == "*" || "$token" == *[\*\?\!]* ]] && continue
-			if [[ -z "${seen_hosts[$token]-}" ]]; then
-				seen_hosts[$token]=1
-				print -r -- "$token"
+	for config_file in ${(f)"$(collect_config_files "$SSH_CONFIG_PATH")"}; do
+		[[ -r "$config_file" ]] || continue
+		while IFS= read -r line || [[ -n "$line" ]]; do
+			trimmed="${line##[[:space:]]#}"
+			if [[ ! "$trimmed" == [Hh][Oo][Ss][Tt][[:space:]]* ]]; then
+				continue
 			fi
-			break
-		done
-	done < "$SSH_CONFIG_PATH"
+
+			rest="${trimmed#[Hh][Oo][Ss][Tt][[:space:]]#}"
+			# A Host line may declare several aliases: `Host beta gamma delta`.
+			# Emit every concrete one, skipping patterns and negations.
+			for token in ${(z)rest}; do
+				[[ "$token" == "*" || "$token" == *[\*\?\!]* ]] && continue
+				if [[ -z "${seen_hosts[$token]-}" ]]; then
+					seen_hosts[$token]=1
+					print -r -- "$token"
+				fi
+			done
+		done < "$config_file"
+	done
 }
 
 typeset -a hosts
@@ -227,9 +277,19 @@ ssh_opts=(
 	-o NumberOfPasswordPrompts=0
 )
 
+listing=""
+listing_err=""
+
 fetch_listing() {
 	local requested_path="$1"
-	listing="$(ssh "${ssh_opts[@]}" "$selected_host" sh -s -- "$requested_path" <<'EOSH' 2>&1
+	# Keep ssh stderr (warnings, banners, the remote NOT_A_DIRECTORY note) out
+	# of `listing`, otherwise a stray warning becomes line 1 and corrupts the
+	# path parse below. Capture it separately so failures still show the cause.
+	local err_file
+	err_file="$(mktemp "${TEMP_ROOT}/handoff-ssh-fetch.XXXXXX")" || err_file="${TEMP_ROOT}/handoff-ssh-fetch.$$"
+
+	local listing_out fetch_exit
+	listing_out="$(ssh "${ssh_opts[@]}" "$selected_host" sh -s -- "$requested_path" 2>"$err_file" <<'EOSH'
 input_path=$1
 case "$input_path" in
 	"~") input_path=$HOME ;;
@@ -248,7 +308,14 @@ find . -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | LC_ALL=C sort | whil
 done
 EOSH
 	)"
-	return $?
+	fetch_exit=$?
+
+	listing="$listing_out"
+	listing_err="$(cat -- "$err_file" 2>/dev/null)"
+	rm -f -- "$err_file"
+
+	debug_log "fetch_path=${requested_path} exit=${fetch_exit} stderr=${listing_err//$'\n'/|}"
+	return $fetch_exit
 }
 
 remote_join_path() {
@@ -282,7 +349,11 @@ copy_text_to_clipboard() {
 }
 
 show_error_and_exit() {
-	print -r -- "$1"
+	local detail="$1"
+	if [[ -n "$listing_err" ]]; then
+		detail="$listing_err"
+	fi
+	print -r -- "$detail"
 	print -r -- "--------------------------------"
 	print -r -- "$2"
 	print -r -- "Press any key to go back..."
