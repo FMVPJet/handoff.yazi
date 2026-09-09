@@ -1,0 +1,51 @@
+# Handoff.yazi key bindings
+# To use: append this file to ~/.config/yazi/keymap.toml
+#
+#   cat ~/.config/yazi/plugins/handoff.yazi/keymap.toml >> ~/.config/yazi/keymap.toml
+#
+# Or copy individual bindings you want to use.
+
+[[mgr.prepend_keymap]]
+on   = [ "\\", "c" ]
+run  = "plugin handoff -- copy_file"
+desc = "Copy"
+
+[[mgr.prepend_keymap]]
+on   = [ "\\", "z" ]
+run  = "plugin handoff -- smart_zip"
+desc = "Archive"
+
+[[mgr.prepend_keymap]]
+on   = [ "\\", "x" ]
+run  = "plugin handoff -- extract_here"
+desc = "Extract"
+
+[[mgr.prepend_keymap]]
+on   = [ "\\", "s" ]
+run  = "plugin handoff -- share_menu"
+desc = "Share"
+
+[[mgr.prepend_keymap]]
+on   = [ "\\", "r" ]
+run  = "shell '. \"$HOME/.config/yazi/plugins/handoff.yazi/remote_sync.env.sh\" 2>/dev/null || true; /bin/zsh -f \"$HOME/.config/yazi/plugins/handoff.yazi/remote_sync.zsh\" %h %s' --block"
+desc = "Remote Sync"
+
+[[mgr.prepend_keymap]]
+on   = [ "\\", "o", "f" ]
+run  = "plugin handoff -- open_finder"
+desc = "Open in Finder"
+
+[[mgr.prepend_keymap]]
+on   = [ "\\", "o", "v" ]
+run  = "plugin handoff -- open_vscode"
+desc = "Open in VS Code"
+
+[[mgr.prepend_keymap]]
+on   = [ "\\", "o", "c" ]
+run  = "plugin handoff -- open_cursor"
+desc = "Open in Cursor"
+
+[[mgr.prepend_keymap]]
+on   = [ "\\", "o", "o" ]
+run  = "shell '/bin/zsh -f \"$HOME/.config/yazi/plugins/handoff.yazi/open_with.zsh\" %h %s' --block"
+desc = "Open With..."

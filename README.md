@@ -58,7 +58,22 @@ git clone https://github.com/FMVPJet/handoff.yazi.git \
   ~/.config/yazi/plugins/handoff.yazi
 ```
 
-Add these key bindings to `~/.config/yazi/keymap.toml`:
+**Run the setup script:**
+
+```sh
+~/.config/yazi/plugins/handoff.yazi/setup.sh
+```
+
+This will check dependencies, offer to add key bindings automatically, and show usage hints.
+
+**Or manually add key bindings to `~/.config/yazi/keymap.toml`:**
+
+```sh
+cat ~/.config/yazi/plugins/handoff.yazi/keymap.toml >> ~/.config/yazi/keymap.toml
+```
+
+<details>
+<summary>Individual key bindings (click to expand)</summary>
 
 ```toml
 [[mgr.prepend_keymap]]
@@ -106,6 +121,8 @@ on   = [ "\\", "o", "o" ]
 run  = "shell '/bin/zsh -f \"$HOME/.config/yazi/plugins/handoff.yazi/open_with.zsh\" %h %s' --block"
 desc = "Open With..."
 ```
+
+</details>
 
 ## Quick Start
 

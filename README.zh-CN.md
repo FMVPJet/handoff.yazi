@@ -59,7 +59,22 @@ git clone https://github.com/FMVPJet/handoff.yazi.git \
   ~/.config/yazi/plugins/handoff.yazi
 ```
 
-然后在 `~/.config/yazi/keymap.toml` 中加入这些绑定：
+**运行安装脚本：**
+
+```sh
+~/.config/yazi/plugins/handoff.yazi/setup.sh
+```
+
+脚本会检查依赖、提供自动添加键位绑定的选项，并显示使用提示。
+
+**或手动添加键位绑定到 `~/.config/yazi/keymap.toml`：**
+
+```sh
+cat ~/.config/yazi/plugins/handoff.yazi/keymap.toml >> ~/.config/yazi/keymap.toml
+```
+
+<details>
+<summary>单独的键位绑定（点击展开）</summary>
 
 ```toml
 [[mgr.prepend_keymap]]
@@ -107,6 +122,8 @@ on   = [ "\\", "o", "o" ]
 run  = "shell '/bin/zsh -f \"$HOME/.config/yazi/plugins/handoff.yazi/open_with.zsh\" %h %s' --block"
 desc = "Open With..."
 ```
+
+</details>
 
 ## 快速开始
 
