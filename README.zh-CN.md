@@ -46,17 +46,17 @@
 
 ## 安装
 
-把仓库克隆到 Yazi 的插件目录：
-
-```sh
-git clone git@github.com:FMVPJet/handoff.yazi.git \
-  ~/.config/yazi/plugins/handoff.yazi
-```
-
-或者在支持包管理布局时，使用：
+**通过 Yazi 包管理器安装（推荐）：**
 
 ```sh
 ya pkg add FMVPJet/handoff
+```
+
+**或手动克隆：**
+
+```sh
+git clone https://github.com/FMVPJet/handoff.yazi.git \
+  ~/.config/yazi/plugins/handoff.yazi
 ```
 
 然后在 `~/.config/yazi/keymap.toml` 中加入这些绑定：

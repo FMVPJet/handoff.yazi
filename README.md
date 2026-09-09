@@ -45,17 +45,17 @@ A macOS-focused file handoff toolkit for [Yazi](https://github.com/sxyazi/yazi).
 
 ## Installation
 
-Clone the repository into your Yazi plugins directory:
-
-```sh
-git clone git@github.com:FMVPJet/handoff.yazi.git \
-  ~/.config/yazi/plugins/handoff.yazi
-```
-
-Or, once the repository is published in a package-friendly layout, install it with:
+**Via Yazi package manager (recommended):**
 
 ```sh
 ya pkg add FMVPJet/handoff
+```
+
+**Or clone manually:**
+
+```sh
+git clone https://github.com/FMVPJet/handoff.yazi.git \
+  ~/.config/yazi/plugins/handoff.yazi
 ```
 
 Add these key bindings to `~/.config/yazi/keymap.toml`:
