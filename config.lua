@@ -16,7 +16,7 @@ return {
 	},
 
 	-- Advanced options (optional)
-	-- cache_dir = "/tmp/handoff-swift-cache",
+	-- cache_dir = os.getenv("HOME") .. "/Library/Caches/handoff.yazi",
 	-- archive_dir = "/tmp/handoff-archive",
 	-- archive_cleanup_minutes = 1440,  -- 24 hours
 	-- airdrop_timeout_seconds = 300,   -- 5 minutes

@@ -3,7 +3,9 @@
 -- 1. Load external config (optional)
 local default_config = {
 	share_apps = { w = "WeChat", f = "Feishu" },
-	cache_dir = "/tmp/handoff-swift-cache",
+	-- Kept out of /tmp: macOS's tmp_cleaner empties /tmp daily, which forced a
+	-- cold Swift/Clang compile (5-30s) the next time AirDrop was used.
+	cache_dir = os.getenv("HOME") .. "/Library/Caches/handoff.yazi",
 	archive_dir = "/tmp/handoff-archive",
 	archive_cleanup_minutes = 1440,
 	airdrop_timeout_seconds = 300,
@@ -26,15 +28,13 @@ local ZIP_TEMP_DIR = config.archive_dir
 local ARCHIVE_CLEANUP_MINUTES = config.archive_cleanup_minutes
 local AIRDROP_TIMEOUT_SECONDS = config.airdrop_timeout_seconds
 
-local SWIFT_ENV_PREFIX = table.concat({
-	"SWIFT_MODULE_CACHE_PATH=/tmp/swift-module-cache",
-	"CLANG_MODULE_CACHE_PATH=/tmp/clang-module-cache",
-}, " ")
-
 local function shell_escape(value)
 	-- Escape single quotes for shell: replace ' with '"'"'
 	return "'" .. tostring(value):gsub("'", "'\"'\"'") .. "'"
 end
+
+local SWIFT_ENV_PREFIX = "CLANG_MODULE_CACHE_PATH="
+	.. shell_escape(SWIFT_CACHE_DIR .. "/clang-module-cache")
 
 local function command_succeeded(ok, _, code)
 	if type(ok) == "number" then return ok == 0 end
@@ -142,6 +142,7 @@ local function ensure_swift_binary(source)
 		script_file:close()
 	end
 
+	notify("info", "Compiling Swift helper (first use only)...", TITLE, 5)
 	local compile_cmd = table.concat({
 		SWIFT_ENV_PREFIX,
 		"swiftc -O",
@@ -372,7 +373,7 @@ local function cleanup_old_swift_cache()
 		"mkdir -p " .. shell_escape(SWIFT_CACHE_DIR)
 			.. " && touch " .. shell_escape(stamp)
 			.. " && find " .. shell_escape(SWIFT_CACHE_DIR)
-			.. " -type f ! -name '.last-sweep' -atime +7 -delete > /dev/null 2>&1 &"
+			.. " -maxdepth 1 -type f ! -name '.last-sweep' -atime +7 -delete > /dev/null 2>&1 &"
 	)
 end
 
